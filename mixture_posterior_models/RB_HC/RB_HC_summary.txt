@@ -1,0 +1,49 @@
+ Family: mixture(bernoulli, bernoulli, bernoulli, bernoulli) 
+  Links: mu1 = logit; mu2 = logit; mu3 = logit; mu4 = logit; theta1 = identity; theta2 = identity; theta3 = identity; theta4 = identity 
+Formula: subject_left ~ 1 
+         mu1 ~ 1 + (1 | subject)
+         mu2 ~ 1 + left_prob + (1 + left_prob | subject)
+         mu3 ~ 1 + da_left_prob + (1 + da_left_prob | subject)
+         mu4 ~ 1 + stay_bias + leave_bias + (1 + stay_bias + leave_bias | subject)
+   Data: data (Number of observations: 3011) 
+  Draws: 4 chains, each with iter = 1000; warmup = 0; thin = 1;
+         total post-warmup draws = 4000
+
+Group-Level Effects: 
+~subject (Number of levels: 40) 
+                                    Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(mu1_Intercept)                       0.39      0.29     0.01     1.09 1.00     3340     1733
+sd(mu2_Intercept)                       0.39      0.31     0.01     1.11 1.00     3007     1679
+sd(mu2_left_prob)                       0.40      0.31     0.01     1.17 1.00     2798     1816
+sd(mu3_Intercept)                       0.33      0.26     0.01     0.97 1.00     2057     1396
+sd(mu3_da_left_prob)                    0.53      0.36     0.02     1.32 1.00     1312     1915
+sd(mu4_Intercept)                       0.11      0.08     0.01     0.29 1.00     1502     2083
+sd(mu4_stay_bias)                       0.97      0.17     0.68     1.35 1.00     2285     2437
+sd(mu4_leave_bias)                      0.92      0.15     0.64     1.25 1.00     2048     2979
+cor(mu2_Intercept,mu2_left_prob)       -0.01      0.44    -0.80     0.80 1.00     5517     2648
+cor(mu3_Intercept,mu3_da_left_prob)    -0.02      0.45    -0.82     0.80 1.00     3154     2603
+cor(mu4_Intercept,mu4_stay_bias)        0.20      0.37    -0.60     0.81 1.01      301      601
+cor(mu4_Intercept,mu4_leave_bias)       0.07      0.39    -0.67     0.79 1.02      204      552
+cor(mu4_stay_bias,mu4_leave_bias)      -0.39      0.17    -0.69    -0.03 1.00     1677     2669
+
+Population-Level Effects: 
+                 Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+mu1_Intercept       -0.08      1.49    -3.04     2.92 1.00     5232     3066
+mu2_Intercept       -0.11      1.68    -3.45     3.20 1.00     5610     3093
+mu3_Intercept        1.79      0.75     0.55     3.45 1.00     2605     2403
+mu4_Intercept        0.00      0.13    -0.25     0.25 1.00     1853     2762
+mu2_left_prob        0.03      1.52    -2.95     2.96 1.00     6942     3020
+mu3_da_left_prob    -3.38      0.83    -5.13    -1.94 1.00     2386     2921
+mu4_stay_bias        1.62      0.21     1.23     2.06 1.00     2058     2366
+mu4_leave_bias      -0.89      0.18    -1.26    -0.55 1.00     2078     2684
+
+Family Specific Parameters: 
+       Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+theta1     0.02      0.02     0.00     0.06 1.00     3849     2638
+theta2     0.02      0.02     0.00     0.07 1.00     3349     2338
+theta3     0.17      0.03     0.11     0.23 1.00     2038     2862
+theta4     0.80      0.04     0.73     0.86 1.00     2257     2892
+
+Draws were sampled using sample(hmc). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).

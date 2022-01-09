@@ -1,0 +1,301 @@
+---
+title: "DM_Preprocessing"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Load packages
+```{r}
+library(pacman)
+pacman::p_load(tidyverse)
+```
+
+# Load data
+```{r}
+# Set working directory
+setwd("~/Documents/University/MA_COGNITIVESCIENCE/1SEMESTER/Decision Making/Exam_Analysis")
+# Load data
+d = read_csv("MatchingPenniesRaw.csv")
+d$original_index <- seq.int(nrow(d))
+```
+
+# Raw stats
+```{r}
+# unique subjects
+length(unique(d$Subject))
+
+# how many for each order type
+d %>% group_by(Order) %>% 
+  summarise(n = length(unique(Subject)))
+```
+
+# Preparation of Data
+```{r}
+# Renaming columns
+names(d)[1] = "trial"
+names(d)[2] = "subject_choice"
+names(d)[3] = "bot_choice"
+names(d)[4] = "subject_win"
+names(d)[9] = "block"
+names(d)[10] = "subject"
+names(d)[13] = "bot_strategy"
+names(d)[14] = "order"
+
+# 105 and 117 had two control subjects, since 205 and 217 are not in the data,
+# we rename 305 and 317 to be the control subjects
+d$subject = ifelse(d$subject == 305, 205, d$subject)
+d$subject = ifelse(d$subject == 317, 217, d$subject)
+
+```
+
+# Preprocessing Columns related to Subjects
+```{r}
+# Adding column for subject group: HC and SZ, 100: SCZ, 200: HC
+d$subject_group = ifelse(d$subject > 199, "HC", "SZ")
+# Adding column for match ID, i.e. matched subjects have the same number
+d$match_id = ifelse(d$subject_group == "SZ", d$subject-100, d$subject-200)
+
+# Checking who has matches to remove those that do not have a match
+matches = d %>% group_by(match_id) %>% summarise(n = length(unique(subject_group)))
+
+# Remove the SCZ without control matches
+d = d %>% filter(subject != 107)
+d = d %>% filter(subject != 108)
+d = d %>% filter(subject != 114)
+```
+
+# Preprocessing Columns related to Decisions
+```{r}
+# LEFT/RIGHT BINARY
+# 1 (original) = LEFT = 1 (our data)
+# 2 (original) = RIGHT = 0 (our data)
+
+# Adding column for left/right choices  
+d$subject_lr = ifelse(d$subject_choice == 1, "l", ifelse(d$subject_choice == 2, "r", NA))
+
+# Adding column for binary choices for subject, left = 1, right = 0
+d$subject_left = ifelse(d$subject_choice == 1, 1, ifelse(d$subject_choice == 2, 0, NA))
+
+# Adding column for binary choices for bot, left = 1, right = 0
+d$bot_left = ifelse(d$bot_choice == 1, 1, ifelse(d$bot_choice == 2, 0, NA))
+```
+
+# Preprocessing Columns related to Trials
+```{r}
+# Fill missing trials
+# If it is NA, get the number of the next trial -1
+# Repeat three times to take care of all missing trials
+for (round in c(1:3)) {
+  # for each row in the data
+  for (i in seq(nrow(d))) {
+    # if the current trail is NA and the next trial is not NA
+    if (is.na(d$trial[i]) == TRUE & is.na(d$trial[i+1]) == FALSE) {
+      # make the current trail the next one -1 
+      d$trial[i] = d$trial[i+1]-1}}}
+
+# Some trials have now become 0, even though they are the last trial of the previous block
+# Thus, we turn 0's into 30 or 20 depending on bot strategy
+d$trial = ifelse(d$trial == 0 & is.na(d$bot_strategy) == TRUE, lag(d$trial+1), d$trial)
+d$trial = ifelse(d$trial == 0 & d$bot_strategy == "SimpleReversal", 20, d$trial)
+d$trial = ifelse(d$trial == 0 & d$bot_strategy != "SimpleReversal", 30, d$trial)
+
+```
+
+# Preprocessing Columns related to Strategies
+```{r}
+# Add missing strategies
+for (round in c(1:3)) {
+  # if bot strategy is NA, and it's not the last trial, get the strategy of the next trail
+  d$bot_strategy = ifelse(is.na(d$bot_strategy) == TRUE & !(d$trial %in% c(20,30)), lead(d$bot_strategy), d$bot_strategy)
+  # if the bot strategy is NA, and it's the last trial, get the strategy of the previous trial
+  d$bot_strategy = ifelse(is.na(d$bot_strategy) == TRUE & (d$trial %in% c(20,30)), lag(d$bot_strategy), d$bot_strategy)}
+
+```
+
+# Preprocessing Columns rates to Blocks
+```{r}
+# Add missing blocks
+for (round in c(1:3)) {
+  # if block is NA, and it's not the last trial, get the block of the next trial
+  d$block = ifelse(is.na(d$block) == TRUE & !(d$trial %in% c(20,30)), lead(d$block), d$block)
+  # if block is NA, and it's the last trail, get the block of the previous trails
+  d$block = ifelse(is.na(d$block) == TRUE & (d$trial %in% c(20,30)), lag(d$block), d$block)}
+
+```
+
+# Ordering and adding further relevant columns
+```{r}
+# Order data frame by subject, block and bot strategy
+d = d[with(d, order(subject, block, bot_strategy)), ]
+
+# Add column for absolute trial number for each participant
+d = d %>% group_by(subject) %>%
+  mutate(abs_trial = row_number())
+
+# Add column for session, unique number for each subject, bot strategy and block
+# Start at session 1
+session = 1
+# Make columns all NA
+d$session = NA
+# For each row in the data
+for (i in seq(nrow(d))) {
+  #  If it is the first row, just make it one
+  if (i == 1) {
+    d$session[i] = session}
+  # the next row has the same bot strategy as the previous one, give it the same session ID
+  else if (d$bot_strategy[i] == d$bot_strategy[i-1]) {
+    d$session[i] = session}
+  # if the row does not have the same bot strategy as the previous one, give it a new session ID
+  else if (d$bot_strategy[i] != d$bot_strategy[i-1]) {
+    session = session + 1
+    d$session[i] = session}
+}
+```
+
+# Adding Column to Model Biased Nash Learning Strategy: `left_prob`
+- `left-prob` is the objective probability of the subject choosing left, based on the mean of the previous choices of the bot. 
+```{r}
+# Adding column for Biased Nash: left prob
+d$left_prob = NA
+
+# Fill left prob column
+for (i in unique(d$session)) {
+
+  # First row of the block (or where the session starts)
+  index_sessiontrial1 <- which(d$session == i)[1]
+  
+  # Set left prob for first trail in session to NA
+  d$left_prob[index_sessiontrial1] = NA
+  
+  # If the bot choice of the first trial is NA
+  if (is.na(d$bot_left[index_sessiontrial1])) {
+    # Set the left prob in the second trail to NA
+    d$left_prob[index_sessiontrial1+1] = NA}
+  # Otherwise set left prob of second trial in session to bot choice in first trail
+  else {
+    d$left_prob[index_sessiontrial1+1] = d$bot_left[index_sessiontrial1]}
+  
+  # Follow the same principle if the first and second trial is  NA
+  if (is.na(d$bot_left[index_sessiontrial1]) & is.na(d$bot_left[index_sessiontrial1+1])) {
+    # Set it to NA in the third trial if the first and second are NA
+    d$left_prob[index_sessiontrial1+2] = NA}
+  # Otherwise set left prob of third trial to the mean of the previous ones
+  else {
+    d$left_prob[index_sessiontrial1+2] = mean(d$bot_left[(index_sessiontrial1:(index_sessiontrial1+1))], na.rm=TRUE)}
+  
+  # Follow the same principle if the first, second and third trial is NA
+  if (is.na(d$bot_left[index_sessiontrial1]) & is.na(d$bot_left[index_sessiontrial1+1]) & is.na(d$bot_left[index_sessiontrial1+2])) {
+    # Set it to NA in the fourth trial if the first, second and third are NA
+    d$left_prob[index_sessiontrial1+3] = NA}
+  # Otherwise set left prob of fourth trial to the mean of the previous ones
+  else {
+    d$left_prob[index_sessiontrial1+3] = mean(d$bot_left[(index_sessiontrial1:(index_sessiontrial1+2))], na.rm=TRUE)}
+  
+  # For each of the following trials
+  for (index_trial in which(d$session == i)) {
+    # If it is not the first or second trails
+    if (index_trial > index_sessiontrial1+3) {
+      # Take the mean of how many the bot has chosen left
+      d$left_prob[index_trial] <- mean(d$bot_left[(index_sessiontrial1:(index_trial-1))], na.rm=TRUE)
+    }
+  }
+}
+```
+
+# Adding Column to Model Double Alternation Strategy: `d_left_prob`
+- `da_left-prob` is the probability of the subject choosing left, based on the two previous choices of the bot, i.e. the subject expects the bot to follow a 0-0-1-1 pattern, and thus adjusts accordingly.
+- Probability of choosing left in the trial is 1 if the previous bot choice was the first left or the second right choice (i.e. 0-1, or 0-0)
+- Probability of choosing left in the trial is 0 if the previous bot choice was the second left or the first right choice (i.e. 1-1 or 1-0)
+```{r}
+# Initialize empty column 
+d$da_left_prob = NA
+
+# For each unique session
+for (i in unique(d$session)) {
+
+  # Get the index of the first row of the block (or where the session starts)
+  index_sessiontrial1 <- which(d$session == i)[1]
+  
+  # Set left prob for first trail in session to NA
+  d$da_left_prob[index_sessiontrial1] = NA
+  
+  # If the bot choice in the first trial is NA, set da_left_prob in the second trail to NA again
+  if (is.na(d$bot_left[index_sessiontrial1])) {
+    d$da_left_prob[index_sessiontrial1+1] = NA}
+  # Otherwise set it to the same of the bot, i.e. you expect the bot to do the same again
+  else {
+    d$da_left_prob[index_sessiontrial1+1] = d$bot_left[index_sessiontrial1]}
+  
+  # For each of the following sessions 
+  for (index_trial in which(d$session == i)) {
+    # As long as it is not the first or second trial
+    if (index_trial > (index_sessiontrial1+1)) {
+      
+      # NA fix 1: If the previous bot choice was an NA, make it NA again
+      if (is.na(d$bot_left[index_trial-1])) {
+        d$da_left_prob[index_trial] = NA}
+      
+      # NA fix 2: If the bot choice two the trial one back is not NA, but the 
+      # bot choice of the one two back is NA, give it the bot choice of the previous trail 
+      else if(!is.na(d$bot_left[index_trial-1]) & is.na(d$bot_left[index_trial-2])) {
+        d$da_left_prob[index_trial] = d$bot_left[index_trial-1]}
+      
+      # Otherwise - follow double alternation!
+      # If the two previous bot choices were 1-1, the prob of the subject choosing left in the current one is 0
+      else if (d$bot_left[index_trial-2] == 1 & d$bot_left[index_trial-1] == 1) {
+        d$da_left_prob[index_trial] = 0}
+      # If the two previous bot choices were 1-0, the prob of the subject choosing left in the current one is 0
+      else if (d$bot_left[index_trial-2] == 1 & d$bot_left[index_trial-1] == 0) {
+        d$da_left_prob[index_trial] = 0}
+      # If the two previous bot choices were 0-1, the prob of the subject choosing left in the current one is 1
+      else if ( d$bot_left[index_trial-2] == 0 & d$bot_left[index_trial-1] == 1) {
+        d$da_left_prob[index_trial] = 1}
+      # If the two previous bot choices were 0-0, the prob of the subject choosing left in the current one is 1
+      else if ( d$bot_left[index_trial-2] == 0 & d$bot_left[index_trial-1] == 0) {
+        d$da_left_prob[index_trial] = 1}}}}
+```
+
+# Adding Column to Model Win-Stay-Loose-Shift Strategy: `stay_bias` and `leave_bias`
+- `stay_bias`: how willing the participant is willing to stay after winning (`stay_bias`)
+- `leave_bias`: how willing the participant is to leave after loosing (`leave_bias`)
+```{r}
+# # Add column for stay and leave bias
+d <- d %>% mutate(
+  previous_left = ifelse(lag(subject_left) == 0, -1, 1),
+  pervious_success = ifelse(lag(subject_win) == 0, 0, 1),
+  previous_failure = ifelse(lag(subject_win) == 1, 0, 1),
+  stay_bias = previous_left * pervious_success,
+  leave_bias = previous_left * previous_failure
+)
+
+# Make all first trials of a participant NA, since there is no leave or stay bias
+# It does not make sense to take the first trail into account, that's why we want to remove it from the data
+for (i in unique(d$subject)) {
+  index_trial1 <- which(d$subject == i)[1]
+  d$stay_bias[index_trial1] = NA
+  d$leave_bias[index_trial1] = NA
+}
+```
+
+# Summary statistics of data
+```{r}
+# Number of HC subjects: 40
+length(unique(d$subject[d$subject_group == "HC"]))
+# Number of SCZ subjects: 40
+length(unique(d$subject[d$subject_group == "SZ"]))
+
+# Get the number of trials for each subject: 200
+trials_per_subject = d %>% group_by(subject) %>%
+  summarise(max = max(abs_trial))
+trials_per_subject
+
+# Get the number of subjects doing order 1: 38 or 2: 42
+d %>% group_by(order) %>% 
+  summarise(n = length(unique(subject)))
+```
+
+# Save the final dataframe to be used for modelling
+```{r}
+write_csv(d, "MatchingPennies_Processed.csv")
+``` 

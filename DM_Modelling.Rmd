@@ -1,0 +1,530 @@
+---
+title: "DM_Modelling"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Load packages
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, ggplot2, brms, boot, tidyverse, bayesplot)
+```
+
+# Load data
+```{r}
+# Set working directory
+setwd("~/Documents/University/MA_COGNITIVESCIENCE/1SEMESTER/Decision Making/Exam_Analysis")
+# Load data
+d = read_csv("MatchingPennies_Processed.csv")
+```
+
+# Strategy Data: Getting subsets for data based on conditions: Double Alternation/Random Bias, SZ/HC
+```{r}
+# Double Alternation - SZ
+DA_SZ = d %>% filter(subject_group == "SZ" & bot_strategy == "DoubleAlternation") %>%
+  na.omit(subject_left)
+  
+# Double Alternation - HC
+DA_HC = d %>% filter(subject_group == "HC" & bot_strategy == "DoubleAlternation") %>%
+  na.omit(subject_left)
+
+# Random Bias - SZ
+RB_SZ = d %>% filter(subject_group == "SZ" & bot_strategy == "SimpleReversal") %>%
+  na.omit(subject_left)
+
+# Random Bias - SZ
+RB_HC = d %>% filter(subject_group == "HC" & bot_strategy == "SimpleReversal") %>%
+  na.omit(subject_left)
+```
+
+# Prior Check Function
+```{r}
+# Function for prior checks
+prior_checking <- function(formula, data, prior, family, name){
+
+  # fit priors
+  prior_model <- brm(
+    formula=formula,
+    data=data,
+    family = family,
+    prior=prior,
+    sample_prior = "only",
+    chains = 4,
+    cores = 3,
+    seed = 2,
+    backend = "cmdstanr",
+    threads = threading(2),
+    file = paste0("prior_models/", name, "_model.rds"),
+    file_refit = "on_change",
+    control = list(adapt_delta = 0.99,
+                   max_treedepth = 20))
+  
+  # pp check, looks weird because only 0 and 1 are possible
+  prior_checks = pp_check(prior_model)
+  png(paste0("prior_models/", name, "_prior_plot.png"))
+  print(prior_checks)
+  dev.off()
+  
+  # generate predictions, to plot distribution of actual outcome values, centered at 50%,
+  # average expectations, expectations only in terms of the average
+  data$predictions <- predict(prior_model)[, 1]
+  prior_predictions = ggplot(data, aes(predictions)) +
+    theme_classic() + geom_density(alpha = 0.4)
+  ggplot2::ggsave(paste0("prior_models/", name, "_predictions_plot.png"), prior_predictions)
+  
+  # average expectations, including the uncertainty
+  png(paste0("prior_models/", name, "_predictions_noise_plot.png"))
+  print(hist(inv_logit_scaled(posterior_linpred(prior_model, summary = FALSE))))
+  dev.off()
+}
+``` 
+
+# Posterior Check Function
+```{r}
+# Function for posterior update plots
+plot_posterior_updates <- function(prior_name, posterior_name, posterior_samples, name){
+    title = paste("Distributions of", prior_name, "(light) and", posterior_name, "(dark)")
+    filename = paste0("posterior_models/", name, "_posterior_updates_", prior_name, posterior_name, ".png")
+    plot = ggplot(posterior_samples) +
+      theme_classic() +
+      geom_density(aes_string(prior_name), fill = "lightsteelblue", alpha = 0.6) +
+      geom_density(aes_string(posterior_name), fill = "royalblue4", alpha = 0.8) +
+      labs(x="", y="", color="Legend", title=title)
+    ggsave(filename, plot)
+    print("saved")
+}
+
+# Function for posterior checks
+posterior_checking <- function(formula, data, prior, family, name){
+  # fit model
+  posterior_model <- brm(
+    formula=formula,
+    data=data,
+    family = family,
+    prior=prior,
+    sample_prior = TRUE,
+    chains = 4,
+    cores = 3,
+    seed = 2,
+    backend = "cmdstanr",
+    threads = threading(2),
+    file = paste0("posterior_models/", name, "_model.rds"),
+    file_refit = "on_change",
+    control = list(adapt_delta = 0.99,
+                   max_treedepth = 20))
+  
+  # save model summary
+  sink(paste0("posterior_models/", name, "_summary.txt"))
+  print(summary(posterior_model))
+  sink()
+  
+  # pp check, looks weird because only 0 and 1 are possible
+  posterior_checks = pp_check(posterior_model)
+  png(paste0("posterior_models/", name, "_posterior_plot.png"))
+  print(posterior_checks)
+  dev.off()
+  
+  # generate predictions, to plot distribution of actual outcome values, centered at 50%,
+  # average expectations, expectations only in terms of the average
+  data$predictions <- predict(posterior_model)[, 1]
+  prior_predictions = ggplot(data, aes(predictions)) +
+    theme_classic() + geom_density(alpha = 0.4)
+  ggplot2::ggsave(paste0("posterior_models/", name, "_predictions_plot.png"), prior_predictions)
+  
+  # average expectations, including the uncertainty
+  png(paste0("posterior_models/", name, "_predictions_noise_plot.png"))
+  print(hist(inv_logit_scaled(posterior_linpred(posterior_model, summary = FALSE))))
+  dev.off()
+  
+  # get posterior samples for plot 
+  posterior_samples <- posterior_samples(posterior_model)
+  plot_posterior_updates("prior_Intercept", "b_Intercept", posterior_samples, name)
+  plot_posterior_updates("prior_sd_subject", "sd_subject__Intercept", posterior_samples, name)
+
+  if ("b_left_prob" %in% variables(posterior_model)){
+    plot_posterior_updates("prior_b", "b_left_prob", posterior_samples, name)
+    plot_posterior_updates("prior_sd_subject", "sd_subject__left_prob", posterior_samples, name)
+    plot_posterior_updates("prior_cor_subject", "cor_subject__Intercept__left_prob", posterior_samples, name)}
+  
+  if ("b_da_left_prob" %in% variables(posterior_model)){
+    plot_posterior_updates("prior_b", "b_da_left_prob", posterior_samples, name)
+    plot_posterior_updates("prior_sd_subject", "sd_subject__da_left_prob", posterior_samples, name)
+    plot_posterior_updates("prior_cor_subject", "cor_subject__Intercept__da_left_prob", posterior_samples, name)}
+  
+  if ("b_stay_bias" %in% variables(posterior_model)){
+    plot_posterior_updates("prior_b", "b_stay_bias", posterior_samples, name)
+    plot_posterior_updates("prior_b", "b_leave_bias", posterior_samples, name)
+    plot_posterior_updates("prior_sd_subject", "sd_subject__stay_bias", posterior_samples, name)
+    plot_posterior_updates("prior_sd_subject", "sd_subject__leave_bias", posterior_samples, name)
+    plot_posterior_updates("prior_cor_subject", "cor_subject__Intercept__stay_bias", posterior_samples, name)
+    plot_posterior_updates("prior_cor_subject", "cor_subject__Intercept__leave_bias", posterior_samples, name)
+    plot_posterior_updates("prior_cor_subject", "cor_subject__stay_bias__leave_bias", posterior_samples, name)
+  }
+}
+
+```
+
+# Defining the learning strategies 
+```{r}
+randombias_f <- bf(
+  subject_left ~ 1 + (1 | subject))
+
+biasednash_f <- bf(
+  subject_left ~ 1 + left_prob + (1 + left_prob | subject))
+
+doublealternation_f <- bf(
+  subject_left ~ 1 + da_left_prob + (1 + da_left_prob | subject))
+
+winstay_f <- bf(
+  subject_left ~ 1 + stay_bias + leave_bias + (1 + stay_bias + leave_bias | subject))
+```
+
+# Simulate Priors
+```{r}
+# intercept
+hist(inv_logit_scaled(rnorm(10000,0,1.5)))
+# beta
+hist(inv_logit_scaled(rnorm(10000,0,1.5) + rnorm(10000,0,1)))
+```
+
+# Simple Bias Model Prior and Posterior Checks
+```{r}
+# getting priors, for sample data set
+get_prior(randombias_f, DA_SZ, family = bernoulli) 
+
+# defining priors
+randombias_prior <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.5), class = sd))
+
+# run prior checks 
+prior_checking(randombias_f, DA_SZ, randombias_prior, bernoulli, "DA_SZ/randombias_")
+prior_checking(randombias_f, DA_HC, randombias_prior, bernoulli, "DA_HC/randombias_")
+prior_checking(randombias_f, RB_SZ, randombias_prior, bernoulli, "RB_SZ/randombias_")
+prior_checking(randombias_f, RB_HC, randombias_prior, bernoulli, "RB_HC/randombias_")
+
+# run posterior checks
+posterior_checking(randombias_f, DA_SZ, randombias_prior, bernoulli, "DA_SZ/randombias_")
+posterior_checking(randombias_f, DA_HC, randombias_prior, bernoulli, "DA_HC/randombias_")
+posterior_checking(randombias_f, RB_SZ, randombias_prior, bernoulli, "RB_SZ/randombias_")
+posterior_checking(randombias_f, RB_HC, randombias_prior, bernoulli, "RB_HC/randombias_")
+```
+
+# Biased Nash Model Prior and Posterior Checks
+```{r}
+# getting priors, for sample data set
+get_prior(biasednash_f, DA_SZ, family = bernoulli)
+
+# defining priors
+biasednash_prior <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 1.5), class = b),
+  prior(normal(0, 0.5), class = sd),
+  prior(lkj(2), class = cor))
+
+# run prior checks 
+prior_checking(biasednash_f, DA_SZ, biasednash_prior, bernoulli, "DA_SZ/biasednash_")
+prior_checking(biasednash_f, DA_HC, biasednash_prior, bernoulli, "DA_HC/biasednash_")
+prior_checking(biasednash_f, RB_SZ, biasednash_prior, bernoulli, "RB_SZ/biasednash_")
+prior_checking(biasednash_f, RB_HC, biasednash_prior, bernoulli, "RB_HC/biasednash_")
+
+# run posterior checks
+posterior_checking(biasednash_f, DA_SZ, biasednash_prior, bernoulli, "DA_SZ/biasednash_")
+posterior_checking(biasednash_f, DA_HC, biasednash_prior, bernoulli, "DA_HC/biasednash_")
+posterior_checking(biasednash_f, RB_SZ, biasednash_prior, bernoulli, "RB_SZ/biasednash_")
+posterior_checking(biasednash_f, RB_HC, biasednash_prior, bernoulli, "RB_HC/biasednash_")
+```
+
+# Double Alternation Model Prior and Posterior Checks
+```{r}
+# getting priors, for sample data set
+get_prior(doublealternation_f, DA_SZ, family = bernoulli)
+
+# defining priors
+doublealternation_prior <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 1.5), class = b),
+  prior(normal(0, 0.5), class = sd),
+  prior(lkj(2), class = cor))
+
+# run prior checks 
+prior_checking(doublealternation_f, DA_SZ, doublealternation_prior, bernoulli, "DA_SZ/doublealternation_")
+prior_checking(doublealternation_f, DA_HC, doublealternation_prior, bernoulli, "DA_HC/doublealternation_")
+prior_checking(doublealternation_f, RB_SZ, doublealternation_prior, bernoulli, "RB_SZ/doublealternation_")
+prior_checking(doublealternation_f, RB_HC, doublealternation_prior, bernoulli, "RB_HC/doublealternation_")
+
+# run posterior checks
+posterior_checking(doublealternation_f, DA_SZ, doublealternation_prior, bernoulli, "DA_SZ/doublealternation_")
+posterior_checking(doublealternation_f, DA_HC, doublealternation_prior, bernoulli, "DA_HC/doublealternation_")
+posterior_checking(doublealternation_f, RB_SZ, doublealternation_prior, bernoulli, "RB_SZ/doublealternation_")
+posterior_checking(doublealternation_f, RB_HC, doublealternation_prior, bernoulli, "RB_HC/doublealternation_")
+```
+
+# Win Stay Model Prior and Posterior Checks
+```{r}
+winstay_f <- bf(
+  subject_left ~ 1 + stay_bias + leave_bias + (1 + stay_bias + leave_bias | subject))
+
+# getting priors, for sample data set
+get_prior(winstay_f, DA_SZ, family = bernoulli)
+
+# defining priors
+winstay_prior <- c(
+  prior(normal(0, 1), class = Intercept),
+  prior(normal(0, 1), class = b),
+  prior(normal(0, 0.5), class = sd),
+  prior(lkj(2), class = cor))
+
+# run prior checks 
+prior_checking(winstay_f, DA_SZ, winstay_prior, bernoulli, "DA_SZ/winstay_")
+prior_checking(winstay_f, DA_HC, winstay_prior, bernoulli, "DA_HC/winstay_")
+prior_checking(winstay_f, RB_SZ, winstay_prior, bernoulli, "RB_SZ/winstay_")
+prior_checking(winstay_f, RB_HC, winstay_prior, bernoulli, "RB_HC/winstay_")
+
+# run posterior checks
+posterior_checking(winstay_f, DA_SZ, winstay_prior, bernoulli, "DA_SZ/winstay_")
+posterior_checking(winstay_f, DA_HC, winstay_prior, bernoulli, "DA_HC/winstay_")
+posterior_checking(winstay_f, RB_SZ, winstay_prior, bernoulli, "RB_SZ/winstay_")
+posterior_checking(winstay_f, RB_HC, winstay_prior, bernoulli, "RB_HC/winstay_")
+```
+
+
+# Mixture Model
+```{r}
+
+mixture <- mixture(bernoulli, bernoulli, bernoulli, bernoulli, order = "none")
+# 1: simple bias
+# 2: biased nash
+# 3: double alternation
+# 4: win stay - loose shift
+
+mixture_f <- bf(
+  # base
+  subject_left ~ 1,
+  # strategies
+  mu1 ~ 1 + (1 | subject),
+  mu2 ~ 1 + left_prob + (1 + left_prob | subject),
+  mu3 ~ 1 + da_left_prob + (1 + da_left_prob | subject),
+  mu4 ~ 1 + stay_bias + leave_bias + (1 + stay_bias + leave_bias | subject))
+
+# get priors
+get_prior(mixture_f, DA_SZ, mixture)
+
+# define priors
+mixture_prior <- c(
+  # intercepts
+  prior(normal(0,1.5), class=Intercept, dpar=mu1),
+  prior(normal(0,1.5), class=Intercept, dpar=mu2),
+  prior(normal(0,1.5), class=Intercept, dpar=mu3),
+  prior(normal(0,1), class=Intercept, dpar=mu4),
+  # betas
+  prior(normal(0,1.5), class=b, dpar=mu2),
+  prior(normal(0,1.5), class=b, dpar=mu3),
+  prior(normal(0,1), class=b, dpar=mu4),
+  # sd's
+  prior(normal(0,0.5), class = sd, dpar=mu1),
+  prior(normal(0,0.5), class = sd, dpar=mu2),
+  prior(normal(0,0.5), class = sd, dpar=mu3),
+  prior(normal(0,0.5), class = sd, dpar=mu4),
+  # correlations
+  prior(lkj(2), class = cor)
+)
+
+```
+
+# Mixture Model of DA_SZ
+```{r}
+
+data = RB_SZ
+name = "RB_SZ"
+
+# running prior mixture model
+mixture_model_prior <- brm(
+  mixture_f,
+  data,
+  family = mixture,
+  mixture_prior,
+  sample_prior = "only",
+  chains = 4,
+  cores = 3,
+  seed=2,
+  backend = "cmdstanr",
+  threads = threading(2),
+  file = paste0("prior_mixture_models/", name),
+  file_refit = "on_change",
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+)
+
+# running posterior mixture model
+mixture_model_posterior <- brm(
+  mixture_f,
+  data,
+  family = mixture,
+  mixture_prior,
+  sample_prior = T,
+  chains = 4,
+  cores = 3,
+  seed=2,
+  backend = "cmdstanr",
+  threads = threading(2),
+  file = paste0("posterior_mixture_models/", name),
+  file_refit = "on_change",
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+)
+```
+
+# Prior Checks of Mixture Models
+```{r}
+
+# define dataset
+name = "DA_SZ"
+data = DA_SZ
+
+prior_model = readRDS(paste0("prior_mixture_models/", name, ".rds"))
+
+# simple ppcheck
+prior_checks = pp_check(prior_model)
+png(paste0("prior_mixture_models/", name, "_prior_plot.png"))
+print(prior_checks)
+dev.off()
+
+# predictions
+data$predictions <- predict(prior_model)[, 1]
+prior_predictions = ggplot(data, aes(predictions)) +
+  theme_classic() + geom_density(alpha = 0.4)
+ggplot2::ggsave(paste0("prior_mixture_models/", name, "_predictions_plot.png"), prior_predictions)
+  
+# predictions and noise
+png(paste0("prior_mixture_models/", name, "_predictions_noise_plot.png"))
+print(hist(inv_logit_scaled(posterior_linpred(prior_model, summary = FALSE))))
+dev.off()
+
+```
+
+# Posterior Checks of Mixture Models
+```{r}
+
+name = "DA_SZ"
+data = DA_SZ
+
+posterior_model = readRDS(paste0("posterior_mixture_models/", name, ".rds"))
+
+# summary
+sink(paste0("posterior_mixture_models/", name, "_summary.txt"))
+print(summary(posterior_model))
+sink()
+
+# pp check, looks weird because only 0 and 1 are possible
+posterior_checks = pp_check(posterior_model)
+png(paste0("posterior_mixture_models/", name, "_posterior_plot.png"))
+print(posterior_checks)
+dev.off()
+
+# generate predictions, to plot distribution of actual outcome values, centered at 50%,
+# average expectations, expectations only in terms of the average
+data$predictions <- predict(posterior_model)[, 1]
+posterior_predictions = ggplot(data, aes(predictions)) +
+  theme_classic() + geom_density(alpha = 0.4)
+ggplot2::ggsave(paste0("posterior_mixture_models/", name, "_predictions_plot.png"), posterior_predictions)
+
+# prior and posterior update plots
+posterior_s = posterior_samples(posterior_model)
+
+# theta1
+title = paste("Distributions of prior_theta1 (light) and theta1 (dark)")
+theta1 = ggplot(posterior_s) +
+    theme_classic() +
+    geom_density(aes(`prior_theta[1]`), fill = "lightsteelblue", alpha = 0.6) +
+    geom_density(aes(`theta[1]`), fill = "royalblue4", alpha = 0.8) +
+    labs(x="", y="", color="Legend", title=title)
+ggplot2::ggsave(paste0("posterior_mixture_models/", name, "_update_prior_theta1.png"), theta1)
+
+# theta2
+title = paste("Distributions of prior_theta2 (light) and theta2 (dark)")
+theta2 = ggplot(posterior_s) +
+    theme_classic() +
+    geom_density(aes(`prior_theta[2]`), fill = "lightsteelblue", alpha = 0.6) +
+    geom_density(aes(`theta[2]`), fill = "royalblue4", alpha = 0.8) +
+    labs(x="", y="", color="Legend", title=title)
+ggplot2::ggsave(paste0("posterior_mixture_models/", name, "_update_prior_theta2.png"), theta2)
+
+# theta3
+title = paste("Distributions of prior_theta3 (light) and theta3 (dark)")
+theta3 = ggplot(posterior_s) +
+    theme_classic() +
+    geom_density(aes(`prior_theta[3]`), fill = "lightsteelblue", alpha = 0.6) +
+    geom_density(aes(`theta[3]`), fill = "royalblue4", alpha = 0.8) +
+    labs(x="", y="", color="Legend", title=title)
+ggplot2::ggsave(paste0("posterior_mixture_models/", name, "_update_prior_theta3.png"), theta3)
+
+# theta4
+title = paste("Distributions of prior_theta4 (light) and theta4 (dark)")
+theta4 = ggplot(posterior_s) +
+    theme_classic() +
+    geom_density(aes(`prior_theta[4]`), fill = "lightsteelblue", alpha = 0.6) +
+    geom_density(aes(`theta[4]`), fill = "royalblue4", alpha = 0.8) +
+    labs(x="", y="", color="Legend", title=title)
+ggplot2::ggsave(paste0("posterior_mixture_models/", name, "_update_prior_theta4.png"), theta4)
+
+```
+
+# Plots
+```{r}
+
+# load data
+SZ_model = readRDS("posterior_mixture_models/DA_SZ.rds")
+HC_model = readRDS("posterior_mixture_models/DA_HC.rds")
+
+# get estimates of SZ
+SZ_summary = as.data.frame(summary(SZ_model)$spec_pars)
+SZ_summary <- cbind(theta = rownames(SZ_summary), SZ_summary)
+rownames(SZ_summary) <- 1:nrow(SZ_summary)
+SZ_summary$group = "SCZ"
+
+# get estimates of HC
+HC_summary = as.data.frame(summary(HC_model)$spec_pars)
+HC_summary <- cbind(theta = rownames(HC_summary), HC_summary)
+rownames(HC_summary) <- 1:nrow(HC_summary)
+HC_summary$group = "HC"
+
+# bind estimates together and rename columns
+summaries = rbind(SZ_summary, HC_summary)
+colnames(summaries) = c("theta", "estimate", "error", "lowerCI", "upperCI", "rhat", "bulkESS", "tailESS", "group")
+
+
+# rename thetas
+summaries$theta = ifelse(summaries$theta == "theta1", "RB",
+                         ifelse(summaries$theta == "theta2", "BN",
+                                ifelse(summaries$theta == "theta3", "DA",
+                                       "WSLS")))
+
+# relevel thetas
+summaries$theta <- factor(summaries$theta, levels = c("RB", "BN", "DA", "WSLS"))
+
+# rename groups
+summaries$group = ifelse(summaries$group == "SCZ", "Schizophrenia Subjects (SCZ)", 
+                         "Healthy Controls Subjects (HC)")
+
+summaries$group <- factor(summaries$group, levels = c("Schizophrenia Subjects (SCZ)", "Healthy Controls Subjects (HC)"))
+
+# make plot
+ggplot(summaries, aes(x=theta, y=estimate, fill = theta)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  geom_errorbar(aes(ymin=lowerCI, ymax=upperCI), width=.2,position=position_dodge(.9)) +
+  labs(title = "Mixing Proportions of SCZ and HC against Double Alternation Opponent", 
+       x="Adaptation Strategy", y = "Mixing Proportions in %", legend=FALSE) +
+  theme_bw() +
+  scale_fill_manual(name = "", values=c("#fd7f6f","#7eb0d5", "#b2e061", "#ffb55a"), 
+                    labels = c("Random Bias (RB)", "Biased Nash (BN)", "Double Alternation (DA)", "Win-Stay/Lose-Switch (WSLS)")) +
+  theme(plot.title = element_text(hjust = 0.5), legend.position="bottom") +
+  facet_wrap("~group")
+```
+
+

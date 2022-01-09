@@ -1,0 +1,26 @@
+ Family: bernoulli 
+  Links: mu = logit 
+Formula: subject_left ~ 1 + stay_bias + leave_bias + (1 + stay_bias + leave_bias | subject) 
+   Data: data (Number of observations: 2976) 
+  Draws: 4 chains, each with iter = 1000; warmup = 0; thin = 1;
+         total post-warmup draws = 4000
+
+Group-Level Effects: 
+~subject (Number of levels: 40) 
+                          Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)                 0.06      0.05     0.00     0.17 1.01      812     1270
+sd(stay_bias)                 0.90      0.13     0.67     1.18 1.00     1680     2636
+sd(leave_bias)                0.61      0.10     0.44     0.83 1.00     2078     3241
+cor(Intercept,stay_bias)     -0.09      0.39    -0.78     0.73 1.03      148      204
+cor(Intercept,leave_bias)    -0.24      0.39    -0.85     0.62 1.04      115      377
+cor(stay_bias,leave_bias)     0.32      0.17    -0.04     0.63 1.00     2184     3046
+
+Population-Level Effects: 
+           Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+Intercept     -0.01      0.04    -0.10     0.07 1.00     5450     2861
+stay_bias      1.14      0.16     0.84     1.45 1.00     1470     2040
+leave_bias    -0.50      0.11    -0.72    -0.28 1.00     2380     2805
+
+Draws were sampled using sample(hmc). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).

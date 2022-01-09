@@ -1,0 +1,22 @@
+ Family: bernoulli 
+  Links: mu = logit 
+Formula: subject_left ~ 1 + da_left_prob + (1 + da_left_prob | subject) 
+   Data: data (Number of observations: 3011) 
+  Draws: 4 chains, each with iter = 1000; warmup = 0; thin = 1;
+         total post-warmup draws = 4000
+
+Group-Level Effects: 
+~subject (Number of levels: 40) 
+                            Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)                   0.20      0.08     0.03     0.36 1.00      850      645
+sd(da_left_prob)                0.47      0.12     0.25     0.71 1.00      831      939
+cor(Intercept,da_left_prob)    -0.73      0.24    -0.97    -0.04 1.00      764      695
+
+Population-Level Effects: 
+             Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+Intercept        0.38      0.06     0.26     0.51 1.00     4344     3238
+da_left_prob    -0.79      0.11    -1.00    -0.58 1.00     2827     2627
+
+Draws were sampled using sample(hmc). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).

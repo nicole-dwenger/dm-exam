@@ -479,8 +479,8 @@ ggplot2::ggsave(paste0("posterior_mixture_models/", name, "_update_prior_theta4.
 ```{r}
 
 # load data
-SZ_model = readRDS("posterior_mixture_models/DA_SZ.rds")
-HC_model = readRDS("posterior_mixture_models/DA_HC.rds")
+SZ_model = readRDS("posterior_mixture_models/RB_SZ.rds")
+HC_model = readRDS("posterior_mixture_models/RB_HC.rds")
 
 # get estimates of SZ
 SZ_summary = as.data.frame(summary(SZ_model)$spec_pars)
@@ -510,15 +510,15 @@ summaries$theta <- factor(summaries$theta, levels = c("RB", "BN", "DA", "WSLS"))
 
 # rename groups
 summaries$group = ifelse(summaries$group == "SCZ", "Schizophrenia Subjects (SCZ)", 
-                         "Healthy Controls Subjects (HC)")
+                         "Healthy Control Subjects (HC)")
 
-summaries$group <- factor(summaries$group, levels = c("Schizophrenia Subjects (SCZ)", "Healthy Controls Subjects (HC)"))
+summaries$group <- factor(summaries$group, levels = c("Schizophrenia Subjects (SCZ)", "Healthy Control Subjects (HC)"))
 
 # make plot
 ggplot(summaries, aes(x=theta, y=estimate, fill = theta)) + 
   geom_bar(stat="identity", position=position_dodge()) +
   geom_errorbar(aes(ymin=lowerCI, ymax=upperCI), width=.2,position=position_dodge(.9)) +
-  labs(title = "Mixing Proportions of SCZ and HC against Double Alternation Opponent", 
+  labs(title = "Mixing Proportions of SCZ and HC against Random Bias Opponent", 
        x="Adaptation Strategy", y = "Mixing Proportions in %", legend=FALSE) +
   theme_bw() +
   scale_fill_manual(name = "", values=c("#fd7f6f","#7eb0d5", "#b2e061", "#ffb55a"), 
